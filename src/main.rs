@@ -1,6 +1,8 @@
 use std::{
     collections::HashMap,
-    io::{stdout, Result},
+    fs::File,
+    io::{stdout, BufReader, Result},
+    str::FromStr,
 };
 
 use ratatui::{
@@ -16,6 +18,7 @@ use ratatui::{
     widgets::{self, Cell as RatCell, Paragraph, Row},
     Frame, Terminal,
 };
+use xml::{name::OwnedName, reader::XmlEvent, EventReader};
 
 enum CellValue {
     Empty,
@@ -52,7 +55,7 @@ fn draw_cells(frame: &mut Frame, cells: &Sheet, state: &State) {
         let mut row_cells: Vec<RatCell> = Vec::new();
         for x in 0..hor_cells {
             let style = match (x, y) {
-                (x, y) if x == sel.0 && y == sel.1 => Style::new().white().on_blue(),
+                (x, y) if x == sel.0 && y == sel.1 => Style::new().white().on_cyan(),
                 _ => Style::new().black().on_white(),
             };
 
@@ -93,6 +96,43 @@ struct State {
 }
 
 fn main() -> Result<()> {
+    let sheet1 = File::open("sheet1.xml")?;
+    let sheet1 = BufReader::new(sheet1);
+
+    let parser = EventReader::new(sheet1);
+    let mut depth = 0;
+
+    for e in parser {
+        match e {
+            Ok(XmlEvent::StartElement {
+                name, attributes, ..
+            }) => {
+                if name.local_name == "row" {}
+                println!(
+                    "{:spaces$}+{name:#?} {attributes:#?}",
+                    "",
+                    spaces = depth * 2,
+                );
+                depth += 1;
+            }
+            Ok(XmlEvent::EndElement { name }) => {
+                depth -= 1;
+                println!("{:spaces$}-{name}", "", spaces = depth * 2);
+            }
+            Ok(XmlEvent::Characters(char)) => {
+                println!("{:spaces$}{char}", "", spaces = depth * 2)
+            }
+            Ok(XmlEvent::CData(data)) => {
+                println!("{:spaces$}{data}", "", spaces = depth * 2)
+            }
+            Err(e) => {
+                eprintln!("Error: {e}");
+                break;
+            }
+            _ => {}
+        }
+    }
+
     stdout().execute(EnterAlternateScreen)?;
     enable_raw_mode()?;
 
