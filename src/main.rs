@@ -16,7 +16,7 @@ use ratatui::{
     Frame, Terminal,
 };
 
-mod parser;
+mod calc;
 
 enum CellValue {
     Empty,
