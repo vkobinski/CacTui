@@ -1,24 +1,22 @@
 use std::{
     collections::HashMap,
-    fs::File,
-    io::{stdout, BufReader, Result},
-    str::FromStr,
+    io::{stdout, Result},
 };
 
 use ratatui::{
     crossterm::{
-        event::{self, KeyCode, KeyEventKind},
-        style::StyledContent,
+        event::{self, KeyCode, KeyEvent, KeyEventKind},
         terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
         ExecutableCommand,
     },
     layout::{Constraint, Rect},
     prelude::CrosstermBackend,
-    style::{Color, Style, Styled, Stylize},
-    widgets::{self, Cell as RatCell, Paragraph, Row},
+    style::{Style, Stylize},
+    widgets::{self, Cell as RatCell, Row},
     Frame, Terminal,
 };
-use xml::{name::OwnedName, reader::XmlEvent, EventReader};
+
+mod parser;
 
 enum CellValue {
     Empty,
@@ -43,6 +41,17 @@ const CELL_Y: u16 = 20;
 const FRAME_WIDTH: u16 = 500;
 const FRAME_HEIGHT: u16 = 500;
 
+fn render_cell(cell: &Cell) -> RatCell {
+    RatCell::new(match &cell.val {
+        CellValue::Empty => String::from(""),
+        CellValue::Number(num) => num.to_string(),
+        CellValue::Text(text) => text.to_string(),
+        CellValue::Date(date) => date.to_string(),
+        CellValue::Formula(_) => todo!(),
+        CellValue::Error(err) => String::from("#"),
+    })
+}
+
 fn draw_cells(frame: &mut Frame, cells: &Sheet, state: &State) {
     let mut rows: Vec<Row> = Vec::new();
 
@@ -61,17 +70,7 @@ fn draw_cells(frame: &mut Frame, cells: &Sheet, state: &State) {
 
             let cell = cells.get(&(x, y)).map_or_else(
                 || RatCell::new("").style(style),
-                |val| {
-                    RatCell::new(match &val.val {
-                        CellValue::Empty => String::from(""),
-                        CellValue::Number(num) => num.to_string(),
-                        CellValue::Text(text) => text.to_string(),
-                        CellValue::Date(date) => date.to_string(),
-                        CellValue::Formula(_) => todo!(),
-                        CellValue::Error(err) => String::from("#"),
-                    })
-                    .style(style)
-                },
+                |val| render_cell(&val).style(style),
             );
 
             row_cells.push(cell);
@@ -80,8 +79,9 @@ fn draw_cells(frame: &mut Frame, cells: &Sheet, state: &State) {
         rows.push(Row::new(row_cells));
     }
 
+    // TODO: This could be used to make the columns size editable
     let mut contraints: Vec<Constraint> = vec![];
-    for i in 0..hor_cells {
+    for _ in 0..hor_cells {
         contraints.push(Constraint::Length(ver_cells.try_into().unwrap()));
     }
 
@@ -90,49 +90,28 @@ fn draw_cells(frame: &mut Frame, cells: &Sheet, state: &State) {
     frame.render_widget(table, Rect::new(0, 0, FRAME_WIDTH, FRAME_HEIGHT));
 }
 
+#[derive(Default)]
 struct State {
     selection: (usize, usize),
     editing: bool,
 }
 
-fn main() -> Result<()> {
-    let sheet1 = File::open("sheet1.xml")?;
-    let sheet1 = BufReader::new(sheet1);
-
-    let parser = EventReader::new(sheet1);
-    let mut depth = 0;
-
-    for e in parser {
-        match e {
-            Ok(XmlEvent::StartElement {
-                name, attributes, ..
-            }) => {
-                if name.local_name == "row" {}
-                println!(
-                    "{:spaces$}+{name:#?} {attributes:#?}",
-                    "",
-                    spaces = depth * 2,
-                );
-                depth += 1;
-            }
-            Ok(XmlEvent::EndElement { name }) => {
-                depth -= 1;
-                println!("{:spaces$}-{name}", "", spaces = depth * 2);
-            }
-            Ok(XmlEvent::Characters(char)) => {
-                println!("{:spaces$}{char}", "", spaces = depth * 2)
-            }
-            Ok(XmlEvent::CData(data)) => {
-                println!("{:spaces$}{data}", "", spaces = depth * 2)
-            }
-            Err(e) => {
-                eprintln!("Error: {e}");
-                break;
-            }
-            _ => {}
-        }
+fn handle_selection_key_press(state: &mut State, key: &KeyEvent) {
+    if key.kind == KeyEventKind::Press && key.code == KeyCode::Right {
+        state.selection.0 += 1;
     }
+    if key.kind == KeyEventKind::Press && key.code == KeyCode::Left && state.selection.0 > 0 {
+        state.selection.0 -= 1;
+    }
+    if key.kind == KeyEventKind::Press && key.code == KeyCode::Up && state.selection.1 > 0 {
+        state.selection.1 -= 1;
+    }
+    if key.kind == KeyEventKind::Press && key.code == KeyCode::Down {
+        state.selection.1 += 1;
+    }
+}
 
+fn main() -> Result<()> {
     stdout().execute(EnterAlternateScreen)?;
     enable_raw_mode()?;
 
@@ -156,10 +135,7 @@ fn main() -> Result<()> {
     let mut terminal = Terminal::new(CrosstermBackend::new(stdout()))?;
     terminal.clear()?;
 
-    let mut state = State {
-        selection: (0, 0),
-        editing: false,
-    };
+    let mut state = State::default();
 
     loop {
         terminal.draw(|frame| {
@@ -173,24 +149,7 @@ fn main() -> Result<()> {
                         break;
                     }
 
-                    if key.kind == KeyEventKind::Press && key.code == KeyCode::Right {
-                        state.selection.0 += 1;
-                    }
-                    if key.kind == KeyEventKind::Press
-                        && key.code == KeyCode::Left
-                        && state.selection.0 > 0
-                    {
-                        state.selection.0 -= 1;
-                    }
-                    if key.kind == KeyEventKind::Press
-                        && key.code == KeyCode::Up
-                        && state.selection.1 > 0
-                    {
-                        state.selection.1 -= 1;
-                    }
-                    if key.kind == KeyEventKind::Press && key.code == KeyCode::Down {
-                        state.selection.1 += 1;
-                    }
+                    handle_selection_key_press(&mut state, &key);
                 } else if key.kind == KeyEventKind::Press {
                     if let KeyCode::Backspace = key.code {
                         let cell = example_sheet.get(&state.selection).map_or_else(

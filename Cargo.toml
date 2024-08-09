@@ -6,4 +6,3 @@ edition = "2021"
 [dependencies]
 chrono = "0.4.38"
 ratatui = "0.27.0"
-xml-rs = "0.8.21"
