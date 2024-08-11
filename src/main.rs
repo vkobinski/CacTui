@@ -66,7 +66,7 @@ impl VimState {
             VimState::Insert => Style::new().black().on_red(),
             VimState::Visual => Style::new().black().on_magenta(),
             VimState::Command(_) => Style::new().black().on_cyan(),
-            VimState::Exit => Style::new().black().on_white(),
+            VimState::Exit => Style::new().black().on_yellow(),
         }
     }
 }
@@ -108,7 +108,7 @@ fn render_text(cell: &Cell) -> String {
         CellValue::Text(text) => text.to_string(),
         CellValue::Date(date) => date.to_string(),
         CellValue::Formula(_) => todo!(),
-        CellValue::Error(err) => String::from("#"),
+        CellValue::Error(_) => String::from("#"),
     }
 }
 
@@ -131,9 +131,9 @@ fn draw_cells(frame: &mut Frame, cells: &Sheet, state: &State) {
             let style = match (x, y) {
                 (x, y) if x == sel.0 && y == sel.1 => {
                     is_sel = true;
-                    Style::new().white().on_cyan()
+                    Style::new().white().on_green()
                 }
-                _ => Style::new().black().on_white(),
+                _ => Style::new().white().on_black(),
             };
             draw_selection(frame, "");
 
@@ -191,9 +191,8 @@ fn draw_vim_state(frame: &mut Frame, state: &State) {
 
 fn draw_selection(frame: &mut Frame, text: &str) {
     {
-        let widget = ratatui::widgets::Paragraph::new(text)
-            .style(Style::new().black().on_magenta())
-            .block(Block::new().padding(Padding::left(1)));
+        let widget =
+            ratatui::widgets::Paragraph::new(text).block(Block::new().padding(Padding::left(1)));
 
         let wid = frame.size().width;
 
@@ -206,8 +205,10 @@ fn handle_selection_key_press(state: &mut State, key: &KeyEvent) {
         if let Some(last) = state.last {
             match last {
                 'g' if key.code == KeyCode::Char('g') => state.selection.1 = 0,
-                _ => state.last = None,
+                _ => {}
             }
+            state.last = None;
+            return;
         }
 
         match key.code {
