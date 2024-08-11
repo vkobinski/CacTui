@@ -1,9 +1,7 @@
 use std::{
     collections::HashMap,
-    default,
     fmt::Display,
     io::{stdout, Result},
-    os::linux::raw::stat,
 };
 
 use ratatui::{
@@ -14,7 +12,7 @@ use ratatui::{
     },
     layout::{Alignment, Constraint, Rect},
     prelude::CrosstermBackend,
-    style::{self, Modifier, Style, Stylize},
+    style::{Style, Stylize},
     widgets::{self, Block, Cell as RatCell, Padding, Row},
     Frame, Terminal,
 };
@@ -81,8 +79,8 @@ struct State {
 
 impl State {
     fn new() -> Self {
-        let hor_cells = usize::from(FRAME_WIDTH / CELL_X);
-        let ver_cells = usize::from(FRAME_HEIGHT / CELL_Y);
+        let hor_cells = 20;
+        let ver_cells = 30;
 
         Self {
             selection: (0, 0),
@@ -190,14 +188,12 @@ fn draw_vim_state(frame: &mut Frame, state: &State) {
 }
 
 fn draw_selection(frame: &mut Frame, text: &str) {
-    {
-        let widget =
-            ratatui::widgets::Paragraph::new(text).block(Block::new().padding(Padding::left(1)));
+    let widget =
+        ratatui::widgets::Paragraph::new(text).block(Block::new().padding(Padding::left(1)));
 
-        let wid = frame.size().width;
+    let wid = frame.size().width;
 
-        frame.render_widget(widget, Rect::new(0, 0, wid, 1));
-    }
+    frame.render_widget(widget, Rect::new(0, 0, wid, 1));
 }
 
 fn handle_selection_key_press(state: &mut State, key: &KeyEvent) {
@@ -212,10 +208,15 @@ fn handle_selection_key_press(state: &mut State, key: &KeyEvent) {
         }
 
         match key.code {
-            KeyCode::Right | KeyCode::Char('l') => state.selection.0 += 1,
+            KeyCode::Right | KeyCode::Char('l') if (state.selection.0 < state.hor_cells - 1) => {
+                state.selection.0 += 1
+            }
+
+            KeyCode::Down | KeyCode::Char('j') if (state.selection.1 < state.ver_cells - 1) => {
+                state.selection.1 += 1
+            }
             KeyCode::Left | KeyCode::Char('h') if (state.selection.0 > 0) => state.selection.0 -= 1,
             KeyCode::Up | KeyCode::Char('k') if (state.selection.1 > 0) => state.selection.1 -= 1,
-            KeyCode::Down | KeyCode::Char('j') => state.selection.1 += 1,
             KeyCode::Char('o') if state.selection.1 < state.ver_cells - 1 => {
                 state.selection.1 += 1;
                 state.vim = VimState::Insert;
@@ -287,9 +288,6 @@ fn main() -> Result<()> {
                 if key.kind == KeyEventKind::Press {
                     match state.vim {
                         VimState::Normal if key.kind == KeyEventKind::Press => {
-                            if key.code == KeyCode::Char('q') {
-                                break;
-                            }
                             if let KeyCode::Char('i') = key.code {
                                 state.vim = match state.vim {
                                     VimState::Normal => VimState::Insert,

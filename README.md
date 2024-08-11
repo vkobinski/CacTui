@@ -8,6 +8,8 @@ CalcTui is a terminal-based Excel clone written in Rust. It leverages vim motion
 - **Multiple Modes**: Switch between Normal, Insert, Visual, Command, and Exit modes.
 - **Terminal-Based**: Run entirely in the terminal, making it lightweight and fast.
 
+<img src="./demo.gif?raw=true" width="800"/>
+
 ## Installation
 
 To install CalcTui, you need to have Rust and Cargo installed on your system. You can install Rust using `rustup`:
