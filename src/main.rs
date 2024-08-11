@@ -54,7 +54,7 @@ impl Display for VimState {
             VimState::Insert => "INSERT",
             VimState::Visual => "VISUAL",
             VimState::Command(com) => com,
-            VimState::Exit => "EXIT",
+            VimState::Exit => "See you soon! ;)",
         })
     }
 }
@@ -222,6 +222,12 @@ fn handle_selection_key_press(state: &mut State, key: &KeyEvent) {
             KeyCode::Char('O') if state.selection.1 > 0 => {
                 state.selection.1 -= 1;
                 state.vim = VimState::Insert;
+            }
+            KeyCode::Char('^') => {
+                state.selection.0 = 0;
+            }
+            KeyCode::Char('$') => {
+                state.selection.0 = state.hor_cells - 1;
             }
             KeyCode::Char('G') => {
                 state.selection.1 = state.ver_cells - 1;
