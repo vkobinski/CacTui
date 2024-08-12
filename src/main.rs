@@ -69,8 +69,10 @@ impl VimState {
     }
 }
 
+type Sheet = HashMap<(usize, usize), Cell>;
 struct State {
     selection: (usize, usize),
+    sheet: Sheet,
     vim: VimState,
     last: Option<char>,
     hor_cells: usize,
@@ -78,12 +80,13 @@ struct State {
 }
 
 impl State {
-    fn new() -> Self {
+    fn new(sheet: Sheet) -> Self {
         let hor_cells = 20;
         let ver_cells = 30;
 
         Self {
             selection: (0, 0),
+            sheet,
             vim: VimState::Normal,
             last: None,
             hor_cells,
@@ -91,8 +94,6 @@ impl State {
         }
     }
 }
-
-type Sheet = HashMap<(usize, usize), Cell>;
 
 const CELL_X: u16 = 30;
 const CELL_Y: u16 = 20;
@@ -114,13 +115,15 @@ fn render_cell(cell: &Cell) -> RatCell {
     RatCell::new(render_text(cell))
 }
 
-fn draw_cells(frame: &mut Frame, cells: &Sheet, state: &State) {
+fn draw_cells(frame: &mut Frame, state: &State) {
     let mut rows: Vec<Row> = Vec::new();
 
     let sel = state.selection;
 
     let hor_cells = state.hor_cells;
     let ver_cells = state.ver_cells;
+
+    let cells = &state.sheet;
 
     for y in 0..ver_cells {
         let mut row_cells: Vec<RatCell> = Vec::new();
@@ -276,11 +279,11 @@ fn main() -> Result<()> {
     let mut terminal = Terminal::new(CrosstermBackend::new(stdout()))?;
     terminal.clear()?;
 
-    let mut state = State::new();
+    let mut state = State::new(example_sheet);
 
     loop {
         terminal.draw(|frame| {
-            draw_cells(frame, &example_sheet, &state);
+            draw_cells(frame, &state);
         })?;
 
         if event::poll(std::time::Duration::from_millis(16))? {
@@ -302,7 +305,7 @@ fn main() -> Result<()> {
                                 state.vim = VimState::Normal;
                             }
                             KeyCode::Backspace => {
-                                let cell = example_sheet.get(&state.selection).map_or_else(
+                                let cell = state.sheet.get(&state.selection).map_or_else(
                                     || CellValue::Empty,
                                     |cell_val| match &cell_val.val {
                                         CellValue::Empty => CellValue::Empty,
@@ -321,7 +324,7 @@ fn main() -> Result<()> {
                                     },
                                 );
 
-                                example_sheet.insert(
+                                state.sheet.insert(
                                     state.selection,
                                     Cell {
                                         val: cell,
@@ -330,7 +333,7 @@ fn main() -> Result<()> {
                                 );
                             }
                             KeyCode::Char(c) => {
-                                let cell = example_sheet.get(&state.selection).map_or_else(
+                                let cell = state.sheet.get(&state.selection).map_or_else(
                                     || CellValue::Text(c.to_string()),
                                     |cell_val| match &cell_val.val {
                                         CellValue::Empty => CellValue::Text(c.to_string()),
@@ -352,7 +355,7 @@ fn main() -> Result<()> {
                                     },
                                 );
 
-                                example_sheet.insert(
+                                state.sheet.insert(
                                     state.selection,
                                     Cell {
                                         val: cell,

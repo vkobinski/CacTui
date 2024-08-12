@@ -1,18 +1,4 @@
-#[derive(Clone, PartialEq, Debug)]
-enum Token {
-    Identifier(String),
-    Number(f32),
-    Plus,
-    Minus,
-    Star,
-    Slash,
-    Comma,
-    Dot,
-    True,
-    False,
-    LeftParen,
-    RightParen,
-}
+use super::Token;
 
 enum ScanError {
     SourceEnded,
@@ -41,7 +27,7 @@ impl Scanner {
             self.scan_token();
         }
 
-        return self.tokens.clone();
+        self.tokens.clone()
     }
 
     fn scan_token(&mut self) {
@@ -58,6 +44,12 @@ impl Scanner {
             '/' => Token::Slash,
             ',' => Token::Comma,
             '.' => Token::Dot,
+            ':' => Token::Colon,
+            '=' => Token::Equal,
+            '>' if self.consume_if('=') => Token::GreaterEqual,
+            '<' if self.consume_if('=') => Token::LessEqual,
+            '>' => Token::Greater,
+            '<' => Token::Less,
             '(' => Token::LeftParen,
             ')' => Token::RightParen,
             '"' => self.string(),
@@ -81,6 +73,15 @@ impl Scanner {
         }
 
         Token::Identifier(chars.into_iter().collect())
+    }
+
+    fn consume_if(&mut self, c: char) -> bool {
+        if self.source.chars().nth(self.current) == Some(c) {
+            self.advance();
+            true
+        } else {
+            false
+        }
     }
 
     fn peek(&self) -> char {
@@ -144,35 +145,64 @@ mod parser_tests {
     use super::*;
 
     #[test]
-    fn parse_string() {
+    fn scan_string() {
         let tokens = Scanner::new("\"Teste\"".to_string()).parse();
         let compare = Token::Identifier("Teste".to_string());
         assert_eq!(compare, *tokens.first().unwrap());
     }
 
     #[test]
-    fn parse_number() {
+    fn scan_number() {
         let tokens = Scanner::new("20.32".to_string()).parse();
         let compare = Token::Number(20.32);
         assert_eq!(compare, *tokens.first().unwrap());
     }
 
     #[test]
-    fn parse_true() {
+    fn scan_less_equal() {
+        let tokens = Scanner::new("<= A1".to_string()).parse();
+        let compare = Token::LessEqual;
+        assert_eq!(compare, *tokens.first().unwrap());
+        assert_eq!(Token::Identifier("A1".to_string()), *tokens.get(1).unwrap());
+    }
+
+    #[test]
+    fn scan_less() {
+        let tokens = Scanner::new("<".to_string()).parse();
+        let compare = Token::Less;
+        assert_eq!(compare, *tokens.first().unwrap());
+    }
+
+    #[test]
+    fn scan_greater_equal() {
+        let tokens = Scanner::new(">=".to_string()).parse();
+        let compare = Token::GreaterEqual;
+        assert_eq!(compare, *tokens.first().unwrap());
+    }
+
+    #[test]
+    fn scan_greater() {
+        let tokens = Scanner::new(">".to_string()).parse();
+        let compare = Token::Greater;
+        assert_eq!(compare, *tokens.first().unwrap());
+    }
+
+    #[test]
+    fn scan_true() {
         let tokens = Scanner::new("TRUE".to_string()).parse();
         let compare = Token::True;
         assert_eq!(compare, *tokens.first().unwrap());
     }
 
     #[test]
-    fn parse_false() {
+    fn scan_false() {
         let tokens = Scanner::new("FALSE".to_string()).parse();
         let compare = Token::False;
         assert_eq!(compare, *tokens.first().unwrap());
     }
 
     #[test]
-    fn parse_sum() {
+    fn scan_sum() {
         let source = "A1 + A2";
         let resp = vec![
             Token::Identifier("A1".to_string()),
@@ -185,7 +215,25 @@ mod parser_tests {
     }
 
     #[test]
-    fn parse_function_call() {
+    fn scan_entire() {
+        let source = "mul(A1 + A2, 2)";
+        let resp = vec![
+            Token::Identifier("mul".to_string()),
+            Token::LeftParen,
+            Token::Identifier("A1".to_string()),
+            Token::Plus,
+            Token::Identifier("A2".to_string()),
+            Token::Comma,
+            Token::Number(2.0),
+            Token::RightParen,
+        ];
+
+        let tokens = Scanner::new(source.to_string()).parse();
+        assert_eq!(resp, *tokens);
+    }
+
+    #[test]
+    fn scan_function_call() {
         let source = "count_if(A1, A2)";
         let resp = vec![
             Token::Identifier("count_if".to_string()),
