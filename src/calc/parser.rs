@@ -20,7 +20,25 @@ enum InterpretReturn {
     Text(String),
     Values(Vec<InterpretReturn>),
     Bool(bool),
-    Error(String),
+}
+
+#[derive(PartialEq, Debug, Clone)]
+enum InterpretError {
+    BinOp,
+    InvalidOperator,
+    Range,
+    Cell,
+}
+
+impl Display for InterpretError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            InterpretError::BinOp => "Could not parse Binary Operation",
+            InterpretError::InvalidOperator => "Invalid Operator in Binary Operation",
+            InterpretError::Range => "Invalid Range",
+            InterpretError::Cell => "Blank cell",
+        })
+    }
 }
 
 impl Display for InterpretReturn {
@@ -35,7 +53,6 @@ impl Display for InterpretReturn {
                     .join(","),
             ),
             InterpretReturn::Bool(b) => write!(f, "{}", b),
-            InterpretReturn::Error(err) => write!(f, "{}", err),
         }
     }
 }
@@ -58,13 +75,15 @@ impl Expr {
         None
     }
 
-    fn interpret(&self, sheet: &Sheet) -> InterpretReturn {
+    fn interpret(&self, sheet: &Sheet) -> Result<InterpretReturn, InterpretError> {
         match self {
             Expr::Range(r) => {
                 let (from, to) = (r.from.clone(), r.to.clone());
 
-                if let (InterpretReturn::Text(from), InterpretReturn::Text(to)) =
-                    (from.interpret(sheet), to.interpret(sheet))
+                if let (
+                    Expr::Literal(Literal::Identifier(from)),
+                    Expr::Literal(Literal::Identifier(to)),
+                ) = ((*from), *(to))
                 {
                     let from = self.parse_literal(from);
                     let to = self.parse_literal(to);
@@ -81,30 +100,74 @@ impl Expr {
                                 }
                             }
 
-                            return InterpretReturn::Values(
+                            return Ok(InterpretReturn::Values(
                                 cells.iter().map(|v| InterpretReturn::Number(*v)).collect(),
-                            );
+                            ));
                         }
                     }
                 }
 
-                InterpretReturn::Error("Error".to_string())
+                Err(InterpretError::Range)
             }
             Expr::Call(_) => todo!(),
-            Expr::BinOp(_) => todo!(),
-            Expr::Literal(lil) => match lil {
-                Literal::Number(n) => InterpretReturn::Number(*n),
-                Literal::Boolean(b) => InterpretReturn::Bool(*b),
-                Literal::Identifier(i) => match self.parse_literal(i.to_string()) {
-                    Some((a, b)) => {
-                        let cell = sheet.get(&(a, b)).unwrap();
-                        if let CellValue::Number(n) = cell.val {
-                            InterpretReturn::Number(n)
-                        } else {
-                            InterpretReturn::Error("Could not get cell value".to_string())
+            Expr::BinOp(bin_op) => {
+                let (left, op, right) = (
+                    bin_op.left.clone(),
+                    bin_op.operator.clone(),
+                    bin_op.right.clone(),
+                );
+
+                let left = left.interpret(sheet);
+                let right = right.interpret(sheet);
+
+                if let (Ok(InterpretReturn::Number(left)), Ok(InterpretReturn::Number(right))) =
+                    (left, right)
+                {
+                    return Ok(match op {
+                        Token::Plus | Token::Minus | Token::Star | Token::Slash => {
+                            InterpretReturn::Number(match op {
+                                Token::Plus => left + right,
+                                Token::Minus => left - right,
+                                Token::Star => left * right,
+                                Token::Slash => left / right,
+                                _ => unreachable!(),
+                            })
                         }
-                    }
-                    None => InterpretReturn::Text(i.to_string()),
+                        Token::Greater
+                        | Token::GreaterEqual
+                        | Token::Less
+                        | Token::LessEqual
+                        | Token::EqualEqual => InterpretReturn::Bool(match op {
+                            Token::Greater => left > right,
+                            Token::GreaterEqual => left >= right,
+                            Token::Less => left < right,
+                            Token::LessEqual => left <= right,
+                            Token::EqualEqual => left == right,
+                            _ => unreachable!(),
+                        }),
+                        _ => return Err(InterpretError::InvalidOperator),
+                    });
+                }
+
+                Err(InterpretError::BinOp)
+            }
+            Expr::Literal(lil) => match lil {
+                Literal::Number(n) => Ok(InterpretReturn::Number(*n)),
+                Literal::Boolean(b) => Ok(InterpretReturn::Bool(*b)),
+                Literal::Identifier(i) => match self.parse_literal(i.to_string()) {
+                    Some((a, b)) => sheet.get(&(a, b)).map_or_else(
+                        || Err(InterpretError::Cell),
+                        |c| {
+                            if let CellValue::Number(n) = c.val {
+                                Ok(InterpretReturn::Number(n))
+                            } else if let CellValue::Formula(_, s) = &c.val {
+                                Ok(InterpretReturn::Number(s.parse().unwrap()))
+                            } else {
+                                Err(InterpretError::Cell)
+                            }
+                        },
+                    ),
+                    None => Ok(InterpretReturn::Text(i.to_string())),
                 },
             },
         }
@@ -180,7 +243,13 @@ impl Parser {
 
     pub fn interpret_string(str: String, sheet: &Sheet) -> Result<String, ParseError> {
         let code = Self::parse_string(str)?;
-        Ok((*code).interpret(sheet).to_string())
+
+        let inter = (*code).interpret(sheet);
+
+        match inter {
+            Ok(ret) => Ok(ret.to_string()),
+            Err(err) => Ok(err.to_string()),
+        }
     }
 
     fn parse(&mut self) -> Result<BExpr, ParseError> {
@@ -393,6 +462,7 @@ mod tests {
         let expr = parse_string("(A1:A2)".to_string())
             .unwrap()
             .interpret(&sheet)
+            .unwrap()
             .to_string();
         let expected = String::from("10,20");
         assert_eq!(expr, expected);

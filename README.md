@@ -4,6 +4,8 @@ CalcTui is a terminal-based Excel clone written in Rust. It leverages vim motion
 
 ## Features
 
+
+- **Calc Language**: A domain-specific language to run Excel-like expressions.
 - **Vim-like Navigation**: Navigate through cells using vim motions.
 - **Multiple Modes**: Switch between Normal, Insert, Visual, Command, and Exit modes.
 - **Terminal-Based**: Run entirely in the terminal, making it lightweight and fast.
@@ -35,6 +37,19 @@ $ cargo run --release
 ```
 
 ### Modes
+
+## The Calc Language
+
+CalcTui includes a domain-specific language called Calc Language for running Excel-like expressions. This language allows you to perform calculations directly within cells using familiar syntax.
+
+### Examples
+
+- **Basic Arithmetic**: `=A1 + B2`
+- **Functions**: `=SUM(A1:A10)`
+- **Conditional Expressions**: `=IF(A1 > 10, "High", "Low")`
+- **Range**: `=A1:A10`, get values from A1 to A10
+
+The Calc Language supports a variety of functions and operations, making it a powerful tool for data manipulation and analysis within the terminal.
 
 - **Normal Mode**: Default mode for navigation.
 - **Insert Mode**: Mode for editing cell values.

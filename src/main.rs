@@ -25,7 +25,7 @@ enum CellValue {
     Number(f64),
     Text(String),
     Date(chrono::NaiveDate),
-    Formula(String),
+    Formula(String, String),
     Error(String),
 }
 
@@ -36,7 +36,7 @@ impl Display for CellValue {
             CellValue::Number(n) => write!(f, "{}", n),
             CellValue::Text(s) => write!(f, "{}", s),
             CellValue::Date(_) => todo!(),
-            CellValue::Formula(_) => todo!(),
+            CellValue::Formula(form, s) => write!(f, "{} => {}", form, s),
             CellValue::Error(_) => todo!(),
         }
     }
@@ -124,7 +124,7 @@ fn render_text(cell: &Cell) -> String {
         CellValue::Number(num) => num.to_string(),
         CellValue::Text(text) => text.to_string(),
         CellValue::Date(date) => date.to_string(),
-        CellValue::Formula(_) => todo!(),
+        CellValue::Formula(_, s) => s.to_string(),
         CellValue::Error(_) => String::from("#"),
     }
 }
@@ -160,7 +160,12 @@ fn draw_cells(frame: &mut Frame, state: &State) {
                 || RatCell::new("").style(style),
                 |val| {
                     if is_sel {
-                        draw_selection(frame, &render_text(val));
+                        match &val.val {
+                            CellValue::Formula(form, s) => {
+                                draw_selection(frame, &format!("{} => {}", form, s))
+                            }
+                            _ => draw_selection(frame, &render_text(val)),
+                        }
                     }
                     render_cell(val).style(style)
                 },
@@ -346,7 +351,9 @@ fn main() -> Result<()> {
                                             CellValue::Text(old[0..old.len() - 1].to_string())
                                         }
                                         CellValue::Date(_) => todo!(),
-                                        CellValue::Formula(_) => todo!(),
+                                        CellValue::Formula(_, _) => {
+                                            CellValue::Formula(String::new(), String::new())
+                                        }
                                         CellValue::Error(_) => todo!(),
                                     },
                                 );
@@ -377,7 +384,9 @@ fn main() -> Result<()> {
                                             CellValue::Text(format!("{}{}", old, c))
                                         }
                                         CellValue::Date(_) => todo!(),
-                                        CellValue::Formula(_) => todo!(),
+                                        CellValue::Formula(_, _) => {
+                                            CellValue::Formula(c.to_string(), String::new())
+                                        }
                                         CellValue::Error(_) => todo!(),
                                     },
                                 );
@@ -398,12 +407,26 @@ fn main() -> Result<()> {
                             KeyCode::Char(c) => {
                                 state.vim = VimState::Formula(format!("{}{}", form, c));
                             }
+                            KeyCode::Backspace => {
+                                if !form.is_empty() {
+                                    state.vim =
+                                        VimState::Formula(form[0..form.len() - 1].to_string())
+                                }
+                            }
                             KeyCode::Enter => {
                                 let inter =
                                     Parser::interpret_string(form.to_string(), &state.sheet);
 
                                 match inter {
-                                    Ok(val) => state.vim = VimState::Formula(val),
+                                    Ok(val) => {
+                                        state.sheet.insert(
+                                            state.selection,
+                                            Cell {
+                                                val: CellValue::Formula(form.to_string(), val),
+                                                format: CellFormat {},
+                                            },
+                                        );
+                                    }
                                     Err(err) => state.vim = VimState::Formula(err.to_string()),
                                 }
                             }

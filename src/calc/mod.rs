@@ -15,6 +15,7 @@ pub enum Token {
     Dot,
     Colon,
     Equal,
+    EqualEqual,
     Greater,
     GreaterEqual,
     Less,
