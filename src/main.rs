@@ -1,9 +1,10 @@
 use std::{
     collections::HashMap,
-    fmt::Display,
+    fmt::{write, Arguments, Display},
     io::{stdout, Result},
 };
 
+use calc::parser::Parser;
 use ratatui::{
     crossterm::{
         event::{self, KeyCode, KeyEvent, KeyEventKind},
@@ -28,6 +29,19 @@ enum CellValue {
     Error(String),
 }
 
+impl Display for CellValue {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            CellValue::Empty => write!(f, ""),
+            CellValue::Number(n) => write!(f, "{}", n),
+            CellValue::Text(s) => write!(f, "{}", s),
+            CellValue::Date(_) => todo!(),
+            CellValue::Formula(_) => todo!(),
+            CellValue::Error(_) => todo!(),
+        }
+    }
+}
+
 struct CellFormat {}
 
 struct Cell {
@@ -41,19 +55,22 @@ enum VimState {
     Normal,
     Insert,
     Visual,
+    Formula(String),
     Command(String),
     Exit,
 }
 
 impl Display for VimState {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(match self {
-            VimState::Normal => "NORMAL",
-            VimState::Insert => "INSERT",
-            VimState::Visual => "VISUAL",
-            VimState::Command(com) => com,
-            VimState::Exit => "See you soon! ;)",
-        })
+        match self {
+            VimState::Normal => write!(f, "NORMAL"),
+            VimState::Insert => write!(f, "INSERT"),
+            VimState::Visual => write!(f, "VISUAL"),
+            VimState::Command(com) => write!(f, "{}", com),
+            VimState::Exit => write!(f, "See you soon! ;)"),
+            VimState::Formula(st) => write!(f, "FORMULA: {}", st),
+            _ => write!(f, ""),
+        }
     }
 }
 
@@ -63,6 +80,7 @@ impl VimState {
             VimState::Normal => Style::new().black().on_green(),
             VimState::Insert => Style::new().black().on_red(),
             VimState::Visual => Style::new().black().on_magenta(),
+            VimState::Formula(_) => Style::new().black().on_light_red(),
             VimState::Command(_) => Style::new().black().on_cyan(),
             VimState::Exit => Style::new().black().on_yellow(),
         }
@@ -261,7 +279,7 @@ fn main() -> Result<()> {
 
     let mut example_sheet = Sheet::default();
     example_sheet.insert(
-        (1, 0),
+        (0, 0),
         Cell {
             val: CellValue::Number(10.0),
             format: CellFormat {},
@@ -272,6 +290,14 @@ fn main() -> Result<()> {
         (0, 1),
         Cell {
             val: CellValue::Number(20.0),
+            format: CellFormat {},
+        },
+    );
+
+    example_sheet.insert(
+        (0, 2),
+        Cell {
+            val: CellValue::Number(30.0),
             format: CellFormat {},
         },
     );
@@ -301,6 +327,7 @@ fn main() -> Result<()> {
                             handle_selection_key_press(&mut state, &key);
                         }
                         VimState::Insert => match key.code {
+                            KeyCode::Char('=') => state.vim = VimState::Formula("".to_string()),
                             KeyCode::Esc => {
                                 state.vim = VimState::Normal;
                             }
@@ -366,6 +393,22 @@ fn main() -> Result<()> {
                             _ => {}
                         },
                         VimState::Visual => todo!(),
+                        VimState::Formula(ref form) => match key.code {
+                            KeyCode::Esc => state.vim = VimState::Normal,
+                            KeyCode::Char(c) => {
+                                state.vim = VimState::Formula(format!("{}{}", form, c));
+                            }
+                            KeyCode::Enter => {
+                                let inter =
+                                    Parser::interpret_string(form.to_string(), &state.sheet);
+
+                                match inter {
+                                    Ok(val) => state.vim = VimState::Formula(val),
+                                    Err(err) => state.vim = VimState::Formula(err.to_string()),
+                                }
+                            }
+                            _ => {}
+                        },
                         VimState::Command(ref till) => match key.code {
                             KeyCode::Enter => execute_command(till.clone(), &mut state),
                             KeyCode::Esc => state.vim = VimState::Normal,

@@ -4,7 +4,7 @@ enum ScanError {
     SourceEnded,
 }
 
-struct Scanner {
+pub(crate) struct Scanner {
     source: String,
     tokens: Vec<Token>,
     start: usize,
@@ -12,7 +12,7 @@ struct Scanner {
 }
 
 impl Scanner {
-    fn new(source: String) -> Self {
+    pub fn new(source: String) -> Self {
         Self {
             source,
             tokens: vec![],
@@ -21,7 +21,7 @@ impl Scanner {
         }
     }
 
-    fn parse(&mut self) -> Vec<Token> {
+    pub fn scan(&mut self) -> Vec<Token> {
         while !self.is_at_end() {
             self.start = self.current;
             self.scan_token();
@@ -133,34 +133,34 @@ impl Scanner {
     }
 
     fn is_true(&self, string: &String) -> bool {
-        string == "TRUE"
+        string == "TRUE" || string == "1"
     }
     fn is_false(&self, string: &String) -> bool {
-        string == "FALSE"
+        string == "FALSE" || string == "2"
     }
 }
 
 #[cfg(test)]
-mod parser_tests {
+mod tests {
     use super::*;
 
     #[test]
     fn scan_string() {
-        let tokens = Scanner::new("\"Teste\"".to_string()).parse();
+        let tokens = Scanner::new("\"Teste\"".to_string()).scan();
         let compare = Token::Identifier("Teste".to_string());
         assert_eq!(compare, *tokens.first().unwrap());
     }
 
     #[test]
     fn scan_number() {
-        let tokens = Scanner::new("20.32".to_string()).parse();
+        let tokens = Scanner::new("20.32".to_string()).scan();
         let compare = Token::Number(20.32);
         assert_eq!(compare, *tokens.first().unwrap());
     }
 
     #[test]
     fn scan_less_equal() {
-        let tokens = Scanner::new("<= A1".to_string()).parse();
+        let tokens = Scanner::new("<= A1".to_string()).scan();
         let compare = Token::LessEqual;
         assert_eq!(compare, *tokens.first().unwrap());
         assert_eq!(Token::Identifier("A1".to_string()), *tokens.get(1).unwrap());
@@ -168,35 +168,35 @@ mod parser_tests {
 
     #[test]
     fn scan_less() {
-        let tokens = Scanner::new("<".to_string()).parse();
+        let tokens = Scanner::new("<".to_string()).scan();
         let compare = Token::Less;
         assert_eq!(compare, *tokens.first().unwrap());
     }
 
     #[test]
     fn scan_greater_equal() {
-        let tokens = Scanner::new(">=".to_string()).parse();
+        let tokens = Scanner::new(">=".to_string()).scan();
         let compare = Token::GreaterEqual;
         assert_eq!(compare, *tokens.first().unwrap());
     }
 
     #[test]
     fn scan_greater() {
-        let tokens = Scanner::new(">".to_string()).parse();
+        let tokens = Scanner::new(">".to_string()).scan();
         let compare = Token::Greater;
         assert_eq!(compare, *tokens.first().unwrap());
     }
 
     #[test]
     fn scan_true() {
-        let tokens = Scanner::new("TRUE".to_string()).parse();
+        let tokens = Scanner::new("TRUE".to_string()).scan();
         let compare = Token::True;
         assert_eq!(compare, *tokens.first().unwrap());
     }
 
     #[test]
     fn scan_false() {
-        let tokens = Scanner::new("FALSE".to_string()).parse();
+        let tokens = Scanner::new("FALSE".to_string()).scan();
         let compare = Token::False;
         assert_eq!(compare, *tokens.first().unwrap());
     }
@@ -210,7 +210,7 @@ mod parser_tests {
             Token::Identifier("A2".to_string()),
         ];
 
-        let tokens = Scanner::new(source.to_string()).parse();
+        let tokens = Scanner::new(source.to_string()).scan();
         assert_eq!(resp, *tokens);
     }
 
@@ -228,7 +228,7 @@ mod parser_tests {
             Token::RightParen,
         ];
 
-        let tokens = Scanner::new(source.to_string()).parse();
+        let tokens = Scanner::new(source.to_string()).scan();
         assert_eq!(resp, *tokens);
     }
 
@@ -244,7 +244,7 @@ mod parser_tests {
             Token::RightParen,
         ];
 
-        let tokens = Scanner::new(source.to_string()).parse();
+        let tokens = Scanner::new(source.to_string()).scan();
         assert_eq!(resp, *tokens);
     }
 }
