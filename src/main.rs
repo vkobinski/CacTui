@@ -2,17 +2,20 @@ use std::{
     collections::HashMap,
     fmt::{write, Arguments, Display},
     io::{stdout, Result},
+    os::linux::raw::stat,
+    sync::Arc,
 };
 
+use calamine::{open_workbook, Data, Error, RangeDeserializerBuilder, Reader, SheetType, Xlsx};
 use calc::parser::Parser;
 use ratatui::{
     crossterm::{
-        event::{self, KeyCode, KeyEvent, KeyEventKind},
+        event::{self, Event, KeyCode, KeyEvent, KeyEventKind},
         terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
         ExecutableCommand,
     },
     layout::{Alignment, Constraint, Rect},
-    prelude::CrosstermBackend,
+    prelude::{Backend, CrosstermBackend},
     style::{Style, Stylize},
     widgets::{self, Block, Cell as RatCell, Padding, Row},
     Frame, Terminal,
@@ -93,30 +96,26 @@ struct State {
     sheet: Sheet,
     vim: VimState,
     last: Option<char>,
-    hor_cells: usize,
-    ver_cells: usize,
+    proportions: (usize, usize),
+    offset: (usize, usize),
 }
 
 impl State {
-    fn new(sheet: Sheet) -> Self {
-        let hor_cells = 20;
-        let ver_cells = 30;
-
+    fn new(sheet: Sheet, hor_cells: usize, ver_cells: usize) -> Self {
         Self {
             selection: (0, 0),
             sheet,
             vim: VimState::Normal,
             last: None,
-            hor_cells,
-            ver_cells,
+            proportions: (hor_cells, ver_cells),
+            offset: (0, 0),
         }
     }
-}
 
-const CELL_X: u16 = 30;
-const CELL_Y: u16 = 20;
-const FRAME_WIDTH: u16 = 500;
-const FRAME_HEIGHT: u16 = 800;
+    fn get_proportions(&self) -> (usize, usize) {
+        (self.proportions.0 / 10, self.proportions.1 - 3)
+    }
+}
 
 fn render_text(cell: &Cell) -> String {
     match &cell.val {
@@ -125,6 +124,17 @@ fn render_text(cell: &Cell) -> String {
         CellValue::Text(text) => text.to_string(),
         CellValue::Date(date) => date.to_string(),
         CellValue::Formula(_, s) => s.to_string(),
+        CellValue::Error(_) => String::from("#"),
+    }
+}
+
+fn render_selection_text(cell: &Cell) -> String {
+    match &cell.val {
+        CellValue::Empty => String::from(""),
+        CellValue::Number(num) => format!("Number => {}", num),
+        CellValue::Text(text) => format!("Text => {}", text),
+        CellValue::Date(date) => date.to_string(),
+        CellValue::Formula(form, s) => format!("{} => {}", form, s),
         CellValue::Error(_) => String::from("#"),
     }
 }
@@ -138,14 +148,13 @@ fn draw_cells(frame: &mut Frame, state: &State) {
 
     let sel = state.selection;
 
-    let hor_cells = state.hor_cells;
-    let ver_cells = state.ver_cells;
+    let (hor_cells, ver_cells) = state.get_proportions();
 
     let cells = &state.sheet;
 
-    for y in 0..ver_cells {
+    for y in state.offset.1..state.offset.1 + ver_cells {
         let mut row_cells: Vec<RatCell> = Vec::new();
-        for x in 0..hor_cells {
+        for x in state.offset.0..state.offset.1 + hor_cells {
             let mut is_sel = false;
             let style = match (x, y) {
                 (x, y) if x == sel.0 && y == sel.1 => {
@@ -160,12 +169,7 @@ fn draw_cells(frame: &mut Frame, state: &State) {
                 || RatCell::new("").style(style),
                 |val| {
                     if is_sel {
-                        match &val.val {
-                            CellValue::Formula(form, s) => {
-                                draw_selection(frame, &format!("{} => {}", form, s))
-                            }
-                            _ => draw_selection(frame, &render_text(val)),
-                        }
+                        draw_selection(frame, &render_selection_text(val));
                     }
                     render_cell(val).style(style)
                 },
@@ -180,7 +184,7 @@ fn draw_cells(frame: &mut Frame, state: &State) {
     // TODO: This could be used to make the columns size editable
     let mut contraints: Vec<Constraint> = vec![];
     for _ in 0..hor_cells {
-        contraints.push(Constraint::Length(ver_cells.try_into().unwrap()));
+        contraints.push(Constraint::Fill(1));
     }
 
     let table = widgets::Table::new(rows, contraints).block(Block::new().padding(Padding::left(1)));
@@ -233,17 +237,27 @@ fn handle_selection_key_press(state: &mut State, key: &KeyEvent) {
             return;
         }
 
-        match key.code {
-            KeyCode::Right | KeyCode::Char('l') if (state.selection.0 < state.hor_cells - 1) => {
-                state.selection.0 += 1
-            }
+        let (hor_cells, ver_cells) = state.get_proportions();
 
-            KeyCode::Down | KeyCode::Char('j') if (state.selection.1 < state.ver_cells - 1) => {
-                state.selection.1 += 1
+        match key.code {
+            KeyCode::Right => {
+                state.offset.0 += 1;
             }
-            KeyCode::Left | KeyCode::Char('h') if (state.selection.0 > 0) => state.selection.0 -= 1,
-            KeyCode::Up | KeyCode::Char('k') if (state.selection.1 > 0) => state.selection.1 -= 1,
-            KeyCode::Char('o') if state.selection.1 < state.ver_cells - 1 => {
+            KeyCode::Char('l') if (state.selection.0 < hor_cells - 1) => state.selection.0 += 1,
+
+            KeyCode::Down => {
+                state.offset.1 += 1;
+            }
+            KeyCode::Char('j') if (state.selection.1 < ver_cells - 1) => state.selection.1 += 1,
+            KeyCode::Left if (state.offset.0 > 0) => {
+                state.offset.0 -= 1;
+            }
+            KeyCode::Char('h') if (state.selection.0 > 0) => state.selection.0 -= 1,
+            KeyCode::Up if (state.offset.1 > 0) => {
+                state.offset.1 -= 1;
+            }
+            KeyCode::Char('k') if (state.selection.1 > 0) => state.selection.1 -= 1,
+            KeyCode::Char('o') if state.selection.1 < ver_cells - 1 => {
                 state.selection.1 += 1;
                 state.vim = VimState::Insert;
             }
@@ -255,10 +269,10 @@ fn handle_selection_key_press(state: &mut State, key: &KeyEvent) {
                 state.selection.0 = 0;
             }
             KeyCode::Char('$') => {
-                state.selection.0 = state.hor_cells - 1;
+                state.selection.0 = hor_cells - 1;
             }
             KeyCode::Char('G') => {
-                state.selection.1 = state.ver_cells - 1;
+                state.selection.1 = ver_cells - 1;
             }
             KeyCode::Char('g') => {
                 state.last = Some('g');
@@ -278,39 +292,50 @@ fn execute_command(command: String, state: &mut State) {
     }
 }
 
+fn read_xlsx(state: &mut State) {
+    let path = "./table.xlsx";
+    let mut workbook: Xlsx<_> = open_workbook(path).expect("Cannot open file");
+
+    if let Ok(range) = workbook.worksheet_range("Sheet1") {
+        for (y, x, cell) in range.cells() {
+            if y > 50 {
+                break;
+            }
+
+            let new_cell = match cell {
+                Data::Int(val) => Some(CellValue::Number(*val as f64)),
+                Data::Float(val) => Some(CellValue::Number(*val)),
+                Data::String(val) => Some(CellValue::Text(val.to_string())),
+                Data::Bool(val) => Some(CellValue::Number((*val as i64) as f64)),
+                _ => None,
+            };
+
+            new_cell.and_then(|cell_val| {
+                state.sheet.insert(
+                    (x, y),
+                    Cell {
+                        val: cell_val,
+                        format: CellFormat {},
+                    },
+                )
+            });
+        }
+    }
+}
+
 fn main() -> Result<()> {
     stdout().execute(EnterAlternateScreen)?;
     enable_raw_mode()?;
 
-    let mut example_sheet = Sheet::default();
-    example_sheet.insert(
-        (0, 0),
-        Cell {
-            val: CellValue::Number(10.0),
-            format: CellFormat {},
-        },
-    );
+    let example_sheet = Sheet::default();
 
-    example_sheet.insert(
-        (0, 1),
-        Cell {
-            val: CellValue::Number(20.0),
-            format: CellFormat {},
-        },
-    );
-
-    example_sheet.insert(
-        (0, 2),
-        Cell {
-            val: CellValue::Number(30.0),
-            format: CellFormat {},
-        },
-    );
-
-    let mut terminal = Terminal::new(CrosstermBackend::new(stdout()))?;
+    let mut terminal: Terminal<CrosstermBackend<std::io::Stdout>> =
+        Terminal::new(CrosstermBackend::new(stdout()))?;
     terminal.clear()?;
 
-    let mut state = State::new(example_sheet);
+    let mut state = State::new(example_sheet, 200, 30);
+
+    read_xlsx(&mut state);
 
     loop {
         terminal.draw(|frame| {
@@ -318,7 +343,13 @@ fn main() -> Result<()> {
         })?;
 
         if event::poll(std::time::Duration::from_millis(16))? {
-            if let event::Event::Key(key) = event::read()? {
+            let event = event::read()?;
+
+            if let event::Event::Resize(x, y) = event {
+                state.proportions = (x.into(), y.into());
+            }
+
+            if let event::Event::Key(key) = event {
                 if key.kind == KeyEventKind::Press {
                     match state.vim {
                         VimState::Normal if key.kind == KeyEventKind::Press => {

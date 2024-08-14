@@ -1,4 +1,4 @@
-use std::{fmt::Display, iter::Peekable, vec::IntoIter};
+use std::{collections::HashMap, fmt::Display, iter::Peekable, vec::IntoIter};
 
 use ratatui::buffer::Cell;
 
@@ -15,10 +15,10 @@ enum Expr {
 }
 
 #[derive(PartialEq, Debug, Clone)]
-enum InterpretReturn {
+enum Interpret {
     Number(f64),
     Text(String),
-    Values(Vec<InterpretReturn>),
+    Values(Vec<Interpret>),
     Bool(bool),
 }
 
@@ -28,6 +28,9 @@ enum InterpretError {
     InvalidOperator,
     Range,
     Cell,
+    FunctionNotExist,
+    InvalidFunction,
+    InvalidArgument,
 }
 
 impl Display for InterpretError {
@@ -37,22 +40,88 @@ impl Display for InterpretError {
             InterpretError::InvalidOperator => "Invalid Operator in Binary Operation",
             InterpretError::Range => "Invalid Range",
             InterpretError::Cell => "Blank cell",
+            InterpretError::FunctionNotExist => "Function does not exist",
+            InterpretError::InvalidFunction => "Trying to call a function with invalid name",
+            InterpretError::InvalidArgument => "Invalid argument for function",
         })
     }
 }
 
-impl Display for InterpretReturn {
+struct FunctionRegistry {
+    functions: HashMap<String, Box<dyn Fn(&[Interpret]) -> Result<Interpret, InterpretError>>>,
+}
+
+impl FunctionRegistry {
+    fn new() -> Self {
+        Self {
+            functions: HashMap::new(),
+        }
+    }
+
+    fn register<F>(&mut self, name: &str, func: F)
+    where
+        F: Fn(&[Interpret]) -> Result<Interpret, InterpretError> + 'static,
+    {
+        self.functions.insert(name.to_string(), Box::new(func));
+    }
+
+    fn call(&self, name: &str, args: &[Interpret]) -> Result<Interpret, InterpretError> {
+        self.functions
+            .get(name)
+            .ok_or(InterpretError::FunctionNotExist)
+            .and_then(|f| f(args))
+    }
+}
+
+fn count(args: &[Interpret]) -> Result<Interpret, InterpretError> {
+    let sum = args.iter().try_fold(0.0, |acc, arg| {
+        if let Interpret::Number(n) = arg {
+            Ok(acc + n)
+        } else {
+            Err(InterpretError::InvalidArgument)
+        }
+    })?;
+    Ok(Interpret::Number(sum))
+}
+pub struct Interpreter {
+    function_registry: FunctionRegistry,
+}
+
+impl Interpreter {
+    pub fn new() -> Self {
+        let mut registry = FunctionRegistry::new();
+        registry.register("count", count);
+        Self {
+            function_registry: registry,
+        }
+    }
+
+    //fn interpret_call(&self, call: &Call) -> Result<Interpret, InterpretError> {
+    //    let args = call
+    //        .args
+    //        .iter()
+    //        .map(|arg| self.interpret(arg))
+    //        .collect::<Result<Vec<_>, _>>()?;
+    //    if let Expr::Literal(Literal::Identifier(id)) = &*call.callee {
+    //        self.function_registry.call(id, &args)
+    //    } else {
+    //        Err(InterpretError::InvalidFunction)
+    //    }
+    //}
+}
+
+impl Display for Interpret {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            InterpretReturn::Number(n) => write!(f, "{}", n),
-            InterpretReturn::Text(t) => write!(f, "{}", t),
-            InterpretReturn::Values(v) => f.write_str(
+            Interpret::Number(n) => write!(f, "{}", n),
+            Interpret::Text(t) => write!(f, "{}", t),
+            Interpret::Values(v) => f.write_str(
                 &v.iter()
                     .map(|v| v.to_string())
                     .collect::<Vec<_>>()
                     .join(","),
             ),
-            InterpretReturn::Bool(b) => write!(f, "{}", b),
+            Interpret::Bool(b) => write!(f, "{}", b),
         }
     }
 }
@@ -75,7 +144,7 @@ impl Expr {
         None
     }
 
-    fn interpret(&self, sheet: &Sheet) -> Result<InterpretReturn, InterpretError> {
+    fn interpret(&self, sheet: &Sheet, inter: &Interpreter) -> Result<Interpret, InterpretError> {
         match self {
             Expr::Range(r) => {
                 let (from, to) = (r.from.clone(), r.to.clone());
@@ -100,8 +169,8 @@ impl Expr {
                                 }
                             }
 
-                            return Ok(InterpretReturn::Values(
-                                cells.iter().map(|v| InterpretReturn::Number(*v)).collect(),
+                            return Ok(Interpret::Values(
+                                cells.iter().map(|v| Interpret::Number(*v)).collect(),
                             ));
                         }
                     }
@@ -109,7 +178,30 @@ impl Expr {
 
                 Err(InterpretError::Range)
             }
-            Expr::Call(_) => todo!(),
+            Expr::Call(call) => {
+                let calle = call.callee.clone();
+
+                if let Expr::Literal(Literal::Identifier(id)) = *calle {
+                    match id.as_str() {
+                        "count" => {
+                            let args = call.args.first().unwrap().interpret(sheet, &inter);
+
+                            if let Ok(Interpret::Values(args)) = args {
+                                return Ok(Interpret::Number(args.iter().fold(0.0, |l, arg| {
+                                    if let Interpret::Number(a) = arg {
+                                        return l + a;
+                                    }
+
+                                    l
+                                })));
+                            }
+                        }
+                        _ => return Err(InterpretError::FunctionNotExist),
+                    }
+                }
+
+                Err(InterpretError::InvalidFunction)
+            }
             Expr::BinOp(bin_op) => {
                 let (left, op, right) = (
                     bin_op.left.clone(),
@@ -117,15 +209,13 @@ impl Expr {
                     bin_op.right.clone(),
                 );
 
-                let left = left.interpret(sheet);
-                let right = right.interpret(sheet);
+                let left = left.interpret(sheet, inter);
+                let right = right.interpret(sheet, inter);
 
-                if let (Ok(InterpretReturn::Number(left)), Ok(InterpretReturn::Number(right))) =
-                    (left, right)
-                {
+                if let (Ok(Interpret::Number(left)), Ok(Interpret::Number(right))) = (left, right) {
                     return Ok(match op {
                         Token::Plus | Token::Minus | Token::Star | Token::Slash => {
-                            InterpretReturn::Number(match op {
+                            Interpret::Number(match op {
                                 Token::Plus => left + right,
                                 Token::Minus => left - right,
                                 Token::Star => left * right,
@@ -137,7 +227,7 @@ impl Expr {
                         | Token::GreaterEqual
                         | Token::Less
                         | Token::LessEqual
-                        | Token::EqualEqual => InterpretReturn::Bool(match op {
+                        | Token::EqualEqual => Interpret::Bool(match op {
                             Token::Greater => left > right,
                             Token::GreaterEqual => left >= right,
                             Token::Less => left < right,
@@ -152,22 +242,22 @@ impl Expr {
                 Err(InterpretError::BinOp)
             }
             Expr::Literal(lil) => match lil {
-                Literal::Number(n) => Ok(InterpretReturn::Number(*n)),
-                Literal::Boolean(b) => Ok(InterpretReturn::Bool(*b)),
+                Literal::Number(n) => Ok(Interpret::Number(*n)),
+                Literal::Boolean(b) => Ok(Interpret::Bool(*b)),
                 Literal::Identifier(i) => match self.parse_literal(i.to_string()) {
                     Some((a, b)) => sheet.get(&(a, b)).map_or_else(
                         || Err(InterpretError::Cell),
                         |c| {
                             if let CellValue::Number(n) = c.val {
-                                Ok(InterpretReturn::Number(n))
+                                Ok(Interpret::Number(n))
                             } else if let CellValue::Formula(_, s) = &c.val {
-                                Ok(InterpretReturn::Number(s.parse().unwrap()))
+                                Ok(Interpret::Number(s.parse().unwrap()))
                             } else {
                                 Err(InterpretError::Cell)
                             }
                         },
                     ),
-                    None => Ok(InterpretReturn::Text(i.to_string())),
+                    None => Ok(Interpret::Text(i.to_string())),
                 },
             },
         }
@@ -244,7 +334,9 @@ impl Parser {
     pub fn interpret_string(str: String, sheet: &Sheet) -> Result<String, ParseError> {
         let code = Self::parse_string(str)?;
 
-        let inter = (*code).interpret(sheet);
+        let interpreter = Interpreter::new();
+
+        let inter = (*code).interpret(sheet, &interpreter);
 
         match inter {
             Ok(ret) => Ok(ret.to_string()),
@@ -387,7 +479,7 @@ impl Parser {
 mod tests {
     use crate::{
         calc::{
-            parser::{Call, InterpretReturn, Range},
+            parser::{Call, Interpret, Interpreter, Range},
             scanner::Scanner,
             Token,
         },
@@ -459,9 +551,11 @@ mod tests {
             },
         );
 
+        let inter = Interpreter::new();
+
         let expr = parse_string("(A1:A2)".to_string())
             .unwrap()
-            .interpret(&sheet)
+            .interpret(&sheet, &inter)
             .unwrap()
             .to_string();
         let expected = String::from("10,20");
