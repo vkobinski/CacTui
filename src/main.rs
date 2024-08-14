@@ -1,21 +1,19 @@
 use std::{
     collections::HashMap,
-    fmt::{write, Arguments, Display},
+    fmt::Display,
     io::{stdout, Result},
-    os::linux::raw::stat,
-    sync::Arc,
 };
 
-use calamine::{open_workbook, Data, Error, RangeDeserializerBuilder, Reader, SheetType, Xlsx};
+use calamine::{open_workbook, Data, Reader, Xlsx};
 use calc::parser::Parser;
 use ratatui::{
     crossterm::{
-        event::{self, Event, KeyCode, KeyEvent, KeyEventKind},
+        event::{self, KeyCode, KeyEvent, KeyEventKind},
         terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
         ExecutableCommand,
     },
     layout::{Alignment, Constraint, Rect},
-    prelude::{Backend, CrosstermBackend},
+    prelude::CrosstermBackend,
     style::{Style, Stylize},
     widgets::{self, Block, Cell as RatCell, Padding, Row},
     Frame, Terminal,
@@ -72,7 +70,6 @@ impl Display for VimState {
             VimState::Command(com) => write!(f, "{}", com),
             VimState::Exit => write!(f, "See you soon! ;)"),
             VimState::Formula(st) => write!(f, "FORMULA: {}", st),
-            _ => write!(f, ""),
         }
     }
 }

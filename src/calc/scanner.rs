@@ -1,9 +1,5 @@
 use super::Token;
 
-enum ScanError {
-    SourceEnded,
-}
-
 pub(crate) struct Scanner {
     source: String,
     tokens: Vec<Token>,
