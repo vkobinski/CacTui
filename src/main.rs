@@ -151,7 +151,7 @@ fn draw_cells(frame: &mut Frame, state: &State) {
 
     for y in state.offset.1..state.offset.1 + ver_cells {
         let mut row_cells: Vec<RatCell> = Vec::new();
-        for x in state.offset.0..state.offset.1 + hor_cells {
+        for x in state.offset.0..state.offset.0 + hor_cells {
             let mut is_sel = false;
             let style = match (x, y) {
                 (x, y) if x == sel.0 && y == sel.1 => {
