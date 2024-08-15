@@ -110,7 +110,7 @@ impl State {
     }
 
     fn get_proportions(&self) -> (usize, usize) {
-        (self.proportions.0 / 10, self.proportions.1 - 3)
+        (self.proportions.0 / 10, self.proportions.1 - 5)
     }
 }
 
@@ -142,11 +142,8 @@ fn render_cell(cell: &Cell) -> RatCell {
 
 fn draw_cells(frame: &mut Frame, state: &State) {
     let mut rows: Vec<Row> = Vec::new();
-
     let sel = state.selection;
-
     let (hor_cells, ver_cells) = state.get_proportions();
-
     let cells = &state.sheet;
 
     for y in state.offset.1..state.offset.1 + ver_cells {
@@ -240,20 +237,24 @@ fn handle_selection_key_press(state: &mut State, key: &KeyEvent) {
             KeyCode::Right => {
                 state.offset.0 += 1;
             }
-            KeyCode::Char('l') if (state.selection.0 < hor_cells - 1) => state.selection.0 += 1,
+            KeyCode::Char('l') if (state.selection.0 < (hor_cells - 1) + state.offset.0) => {
+                state.selection.0 += 1
+            }
 
             KeyCode::Down => {
                 state.offset.1 += 1;
             }
-            KeyCode::Char('j') if (state.selection.1 < ver_cells - 1) => state.selection.1 += 1,
+            KeyCode::Char('j') if (state.selection.1 < (ver_cells - 1) + state.offset.1) => {
+                state.selection.1 += 1
+            }
             KeyCode::Left if (state.offset.0 > 0) => {
                 state.offset.0 -= 1;
             }
-            KeyCode::Char('h') if (state.selection.0 > 0) => state.selection.0 -= 1,
+            KeyCode::Char('h') if (state.selection.0 > state.offset.0) => state.selection.0 -= 1,
             KeyCode::Up if (state.offset.1 > 0) => {
                 state.offset.1 -= 1;
             }
-            KeyCode::Char('k') if (state.selection.1 > 0) => state.selection.1 -= 1,
+            KeyCode::Char('k') if (state.selection.1 > state.offset.1) => state.selection.1 -= 1,
             KeyCode::Char('o') if state.selection.1 < ver_cells - 1 => {
                 state.selection.1 += 1;
                 state.vim = VimState::Insert;
@@ -338,6 +339,12 @@ fn main() -> Result<()> {
         terminal.draw(|frame| {
             draw_cells(frame, &state);
         })?;
+
+        if let Ok(size) = terminal.size() {
+            if size.x != 0 && size.y != 0 {
+                state.proportions = (size.x.into(), size.y.into());
+            }
+        }
 
         if event::poll(std::time::Duration::from_millis(16))? {
             let event = event::read()?;
