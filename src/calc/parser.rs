@@ -185,7 +185,6 @@ impl Parser {
                 if !self.match_token(&Token::Comma) {
                     break;
                 }
-                self.advance();
             }
         }
 
