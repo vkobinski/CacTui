@@ -215,6 +215,7 @@ impl<'a> Interpreter<'a> {
         var_value: Interpret,
     ) -> Result<Interpret, InterpretError> {
         let closure = closure.as_closure();
+
         if let Expr::BinOp(body) = *closure.body.clone() {
             let new_bin_op = Expr::BinOp(BinOp {
                 left: Box::new(Expr::Literal(Literal::Number(var_value.as_number()))),
@@ -402,7 +403,7 @@ mod tests {
 
         let inter = Interpreter::new(&sheet);
 
-        let expr = Parser::parse_string("(A1:A2)".to_string()).unwrap();
+        let expr = Parser::parse_string("A1:A2".to_string()).unwrap();
         let expr = inter.interpret(&expr).unwrap().to_string();
 
         let expected = String::from("10,20");
@@ -431,7 +432,7 @@ mod tests {
 
         let inter = Interpreter::new(&sheet);
 
-        let expr = Parser::parse_string("count((A1:A2))".to_string()).unwrap();
+        let expr = Parser::parse_string("count(A1:A2)".to_string()).unwrap();
         let expr = inter.interpret(&expr).unwrap().to_string();
 
         let expected = String::from("30");

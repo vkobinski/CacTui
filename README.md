@@ -1,11 +1,14 @@
-# CalcTui 🦀
+# CacTui 
 
-CalcTui is a terminal-based Excel clone written in Rust. It leverages vim motions for efficient navigation and editing, providing a powerful and familiar interface for users who are comfortable with vim.
+<img src="./Cactui.png" width="200"/>
+
+
+CacTui is a terminal-based Excel clone written in Rust. It leverages vim motions for efficient navigation and editing, providing a powerful and familiar interface for users who are comfortable with vim.
 
 ## Features
 
 
-- **Calc Language**: A domain-specific language to run Excel-like expressions.
+- **Cac Language**: A domain-specific language to run Excel-like expressions.
 - **Vim-like Navigation**: Navigate through cells using vim motions.
 - **Multiple Modes**: Switch between Normal, Insert, Visual, Command, and Exit modes.
 - **Terminal-Based**: Run entirely in the terminal, making it lightweight and fast.
@@ -14,7 +17,7 @@ CalcTui is a terminal-based Excel clone written in Rust. It leverages vim motion
 
 ## Installation
 
-To install CalcTui, you need to have Rust and Cargo installed on your system. You can install Rust using `rustup`:
+To install CacTui, you need to have Rust and Cargo installed on your system. You can install Rust using `rustup`:
 
 ```sh
 $ curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
@@ -23,14 +26,14 @@ $ curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 Once Rust is installed, clone the repository and build the project:
 
 ```sh
-$ git clone https://github.com/vkobinski/CalcTui.git
-$ cd CalcTui
+$ git clone https://github.com/vkobinski/CacTui.git
+$ cd CacTui
 $ cargo build --release
 ```
 
 ## Usage
 
-To run CalcTui, use the following command:
+To run CacTui, use the following command:
 
 ```sh
 $ cargo run --release
@@ -38,9 +41,9 @@ $ cargo run --release
 
 ### Modes
 
-## The Calc Language
+## The Cac Language
 
-CalcTui includes a domain-specific language called Calc Language for running Excel-like expressions. This language allows you to perform calculations directly within cells using familiar syntax.
+CacTui includes a domain-specific language called Cac Language for running Excel-like expressions. This language allows you to perform calculations directly within cells using familiar syntax.
 
 ### Examples
 
@@ -49,7 +52,7 @@ CalcTui includes a domain-specific language called Calc Language for running Exc
 - **Conditional Expressions**: `=IF(A1 > 10, "High", "Low")`
 - **Range**: `=A1:A10`, get values from A1 to A10
 
-The Calc Language supports a variety of functions and operations, making it a powerful tool for data manipulation and analysis within the terminal.
+The Cac Language supports a variety of functions and operations, making it a powerful tool for data manipulation and analysis within the terminal.
 
 - **Normal Mode**: Default mode for navigation.
 - **Insert Mode**: Mode for editing cell values.
@@ -77,4 +80,4 @@ This project is licensed under the MIT License. See the LICENSE file for details
 - Inspired by vim and its powerful navigation capabilities.
 - Built with Rust for performance and safety.
 
-Enjoy using CalcTui!
+Enjoy using CacTui!
