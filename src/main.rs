@@ -378,9 +378,17 @@ fn main() -> Result<()> {
                                         CellValue::Empty => CellValue::Empty,
                                         CellValue::Number(num) => {
                                             let old_num = num.to_string();
-                                            CellValue::Number(
-                                                old_num[0..old_num.len() - 1].parse().unwrap(),
-                                            )
+
+                                            if !old_num.is_empty() {
+                                                old_num[0..old_num.len() - 1]
+                                                    .parse::<f64>()
+                                                    .map_or_else(
+                                                        |_| CellValue::Text(old_num),
+                                                        CellValue::Number,
+                                                    )
+                                            } else {
+                                                CellValue::Number(*num)
+                                            }
                                         }
                                         CellValue::Text(old) => {
                                             CellValue::Text(old[0..old.len() - 1].to_string())
@@ -408,15 +416,30 @@ fn main() -> Result<()> {
                                         CellValue::Empty => CellValue::Text(c.to_string()),
                                         CellValue::Number(num) => {
                                             let old_num = num.to_string();
-                                            let last_digit = c.to_string().parse::<f64>().unwrap();
-                                            CellValue::Number(
-                                                format!("{}{}", old_num, last_digit)
-                                                    .parse()
-                                                    .unwrap(),
+                                            c.to_string().parse::<f64>().map_or_else(
+                                                |_| {
+                                                    CellValue::Text(format!(
+                                                        "{}{}",
+                                                        old_num.clone(),
+                                                        c.clone()
+                                                    ))
+                                                },
+                                                |val| {
+                                                    CellValue::Number(
+                                                        format!("{}{}", old_num, val)
+                                                            .parse()
+                                                            .unwrap(),
+                                                    )
+                                                },
                                             )
                                         }
                                         CellValue::Text(old) => {
-                                            CellValue::Text(format!("{}{}", old, c))
+                                            let value = format!("{}{}", old, c);
+
+                                            value.parse::<f64>().map_or_else(
+                                                |_| CellValue::Text(value),
+                                                CellValue::Number,
+                                            )
                                         }
                                         CellValue::Date(_) => todo!(),
                                         CellValue::Formula(_, _) => {

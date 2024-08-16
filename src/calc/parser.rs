@@ -9,6 +9,7 @@ pub(crate) enum Expr {
     Range(Range),
     Call(Call),
     BinOp(BinOp),
+    Closure(Closure),
     Literal(Literal),
 }
 
@@ -49,6 +50,12 @@ pub(crate) struct BinOp {
     pub(crate) left: BExpr,
     pub(crate) operator: Token,
     pub(crate) right: BExpr,
+}
+
+#[derive(PartialEq, Debug, Clone)]
+pub(crate) struct Closure {
+    pub(crate) args: Vec<BExpr>,
+    pub(crate) body: BExpr,
 }
 
 #[derive(PartialEq, Debug, Clone)]
@@ -170,6 +177,8 @@ impl Parser {
     fn parse_call(&mut self, callee: BExpr) -> Result<BExpr, ParseError> {
         let mut args = Vec::new();
 
+        dbg!(callee.clone());
+
         if !self.match_token(&Token::RightParen) {
             loop {
                 args.push(self.parse_expression()?);
@@ -184,8 +193,28 @@ impl Parser {
         Ok(Box::new(Expr::Call(Call { callee, args })))
     }
 
+    fn parse_closure(&mut self) -> Result<BExpr, ParseError> {
+        self.consume(&Token::Bar)?;
+        let mut args = Vec::new();
+
+        if !self.match_token(&Token::Bar) {
+            loop {
+                args.push(self.parse_expression()?);
+                if !self.match_token(&Token::Comma) {
+                    break;
+                }
+                self.advance();
+            }
+        }
+
+        self.consume(&Token::Bar)?;
+        let expr = self.parse_expression()?;
+        Ok(Box::new(Expr::Closure(Closure { body: expr, args })))
+    }
+
     fn parse_primary(&mut self) -> Result<Box<Expr>, ParseError> {
         let mut expr = match self.tokens.peek() {
+            Some(Token::Bar) => self.parse_closure()?,
             Some(Token::Number(n)) => {
                 let n = *n;
                 self.advance();
@@ -210,12 +239,13 @@ impl Parser {
                 self.consume(&Token::RightParen)?;
                 expr
             }
-            _ => return Err(ParseError::ExpectedToken("Expression".to_string())),
+            token => {
+                dbg!(token);
+                return Err(ParseError::ExpectedToken("Expression".to_string()));
+            }
         };
 
         while self.match_token(&Token::LeftParen) {
-            self.advance();
-
             expr = self.parse_call(expr)?;
         }
 
@@ -225,17 +255,14 @@ impl Parser {
 
 #[cfg(test)]
 mod tests {
-    use crate::calc::interpreter::Interpreter;
-    use crate::{
-        calc::{
-            parser::{Call, Range},
-            scanner::Scanner,
-            Token,
-        },
-        Cell, Sheet,
+
+    use crate::calc::{
+        parser::{Call, Range},
+        scanner::Scanner,
+        Token,
     };
 
-    use super::{BExpr, BinOp, Expr, Literal, ParseError, Parser};
+    use super::{BExpr, BinOp, Closure, Expr, Literal, ParseError, Parser};
 
     fn parse_string(str: String) -> Result<BExpr, ParseError> {
         let tokens = Scanner::new(str).scan();
@@ -281,60 +308,55 @@ mod tests {
     }
 
     #[test]
-    fn test_range_inter() {
-        let mut sheet = Sheet::new();
+    fn test_call_range() {
+        let expr = parse_string("count(A1:A10)".to_string()).unwrap();
+        let expected = Expr::Call(Call {
+            callee: Box::new(Expr::Literal(Literal::Identifier("count".to_string()))),
+            args: vec![Box::new(Expr::Range(Range {
+                from: Box::new(Expr::Literal(Literal::Identifier("A1".to_string()))),
+                to: Box::new(Expr::Literal(Literal::Identifier("A10".to_string()))),
+            }))],
+        });
 
-        sheet.insert(
-            (0, 0),
-            Cell {
-                val: crate::CellValue::Number(10.0),
-                format: crate::CellFormat {},
-            },
-        );
-
-        sheet.insert(
-            (0, 1),
-            Cell {
-                val: crate::CellValue::Number(20.0),
-                format: crate::CellFormat {},
-            },
-        );
-
-        let inter = Interpreter::new(&sheet);
-
-        let expr = parse_string("(A1:A2)".to_string()).unwrap();
-        let expr = inter.interpret(&expr).unwrap().to_string();
-
-        let expected = String::from("10,20");
-        assert_eq!(expr, expected);
+        assert_eq!(*expr, expected);
     }
 
     #[test]
-    fn test_count() {
-        let mut sheet = Sheet::new();
+    fn test_closure() {
+        let expr = Parser::parse_string("(|v| v > 2)".to_string()).unwrap();
 
-        sheet.insert(
-            (0, 0),
-            Cell {
-                val: crate::CellValue::Number(10.0),
-                format: crate::CellFormat {},
-            },
-        );
+        let expected = Expr::Closure(Closure {
+            args: vec![Box::new(Expr::Literal(Literal::Identifier(
+                "v".to_string(),
+            )))],
+            body: Box::new(Expr::BinOp(BinOp {
+                left: Box::new(Expr::Literal(Literal::Identifier("v".to_string()))),
+                operator: Token::Greater,
+                right: Box::new(Expr::Literal(Literal::Number(2.0))),
+            })),
+        });
 
-        sheet.insert(
-            (0, 1),
-            Cell {
-                val: crate::CellValue::Number(20.0),
-                format: crate::CellFormat {},
-            },
-        );
+        assert_eq!(*expr, expected);
+    }
 
-        let inter = Interpreter::new(&sheet);
+    #[test]
+    fn test_closure_call() {
+        let expr = Parser::parse_string("count_if(|v| v > 2)".to_string()).unwrap();
 
-        let expr = parse_string("count((A1:A2))".to_string()).unwrap();
-        let expr = inter.interpret(&expr).unwrap().to_string();
+        let expected = Expr::Call(Call {
+            callee: Box::new(Expr::Literal(Literal::Identifier("count_if".to_string()))),
+            args: vec![Box::new(Expr::Closure(Closure {
+                args: vec![Box::new(Expr::Literal(Literal::Identifier(
+                    "v".to_string(),
+                )))],
+                body: Box::new(Expr::BinOp(BinOp {
+                    left: Box::new(Expr::Literal(Literal::Identifier("v".to_string()))),
+                    operator: Token::Greater,
+                    right: Box::new(Expr::Literal(Literal::Number(2.0))),
+                })),
+            }))],
+        });
 
-        let expected = String::from("30");
-        assert_eq!(expr, expected);
+        assert_eq!(*expr, expected);
     }
 }

@@ -1,9 +1,9 @@
 use std::{collections::HashMap, fmt::Display};
 
-use crate::{CellValue, Sheet};
+use crate::{calc::parser::BinOp, CellValue, Sheet};
 
 use super::{
-    parser::{Call, Expr, Literal},
+    parser::{Call, Closure, Expr, Literal},
     Token,
 };
 
@@ -13,6 +13,19 @@ pub enum Interpret {
     Text(String),
     Values(Vec<Interpret>),
     Bool(bool),
+    Closure(Closure),
+}
+
+impl Interpret {
+    fn get_type(&self) -> &'static str {
+        match self {
+            Interpret::Number(_) => "Number",
+            Interpret::Text(_) => "Text",
+            Interpret::Values(_) => "Range",
+            Interpret::Bool(_) => "Bool",
+            Interpret::Closure(_) => "Closure",
+        }
+    }
 }
 
 #[derive(PartialEq, Debug, Clone)]
@@ -24,6 +37,9 @@ pub enum InterpretError {
     FunctionNotExist,
     InvalidFunction,
     InvalidArgument,
+    ClosureBinOp,
+    ClosureInvalidArg,
+    ExpectedArg(String),
 }
 
 impl Display for InterpretError {
@@ -36,14 +52,21 @@ impl Display for InterpretError {
             InterpretError::FunctionNotExist => "Function does not exist",
             InterpretError::InvalidFunction => "Trying to call a function with invalid name",
             InterpretError::InvalidArgument => "Invalid argument for function",
+            InterpretError::ClosureBinOp => todo!(),
+            InterpretError::ClosureInvalidArg => todo!(),
+            InterpretError::ExpectedArg(_) => todo!(),
         })
     }
 }
 
 type CalcFunction = Box<dyn Fn(&[Interpret]) -> Result<Interpret, InterpretError>>;
+struct CalcFunctionImplement {
+    fun: CalcFunction,
+    args_type: Vec<&'static str>,
+}
 
 struct FunctionRegistry {
-    functions: HashMap<String, CalcFunction>,
+    functions: HashMap<String, CalcFunctionImplement>,
 }
 
 impl FunctionRegistry {
@@ -53,18 +76,34 @@ impl FunctionRegistry {
         }
     }
 
-    fn register<F>(&mut self, name: &str, func: F)
+    fn register<F>(&mut self, name: &str, func: F, args_types: Vec<&'static str>)
     where
         F: Fn(&[Interpret]) -> Result<Interpret, InterpretError> + 'static,
     {
-        self.functions.insert(name.to_string(), Box::new(func));
+        let fun_insert = CalcFunctionImplement {
+            fun: Box::new(func),
+            args_type: args_types,
+        };
+        self.functions.insert(name.to_string(), fun_insert);
     }
 
     fn call(&self, name: &str, args: &[Interpret]) -> Result<Interpret, InterpretError> {
-        self.functions
+        let function = self
+            .functions
             .get(name)
-            .ok_or(InterpretError::FunctionNotExist)
-            .and_then(|f| f(args))
+            .ok_or(InterpretError::FunctionNotExist)?;
+
+        if function.args_type.len() != args.len() {
+            return Err(InterpretError::InvalidArgument);
+        }
+
+        for (expected_type, arg) in function.args_type.iter().zip(args) {
+            if *expected_type != arg.get_type() {
+                return Err(InterpretError::ExpectedArg(expected_type.to_string()));
+            }
+        }
+
+        (function.fun)(args)
     }
 }
 
@@ -81,6 +120,8 @@ fn count(args: &[Interpret]) -> Result<Interpret, InterpretError> {
     }
     Err(InterpretError::InvalidArgument)
 }
+
+//fn count_if(args: &[Interpret]) -> Result<Interpret, InterpretError> {}
 pub struct Interpreter<'a> {
     function_registry: FunctionRegistry,
     sheet: &'a Sheet,
@@ -89,7 +130,7 @@ pub struct Interpreter<'a> {
 impl<'a> Interpreter<'a> {
     pub fn new(sheet: &'a Sheet) -> Self {
         let mut registry = FunctionRegistry::new();
-        registry.register("count", count);
+        registry.register("count", count, vec!["Range"]);
         Self {
             function_registry: registry,
             sheet,
@@ -206,6 +247,7 @@ impl<'a> Interpreter<'a> {
                     None => Ok(Interpret::Text(i.to_string())),
                 },
             },
+            Expr::Closure(closure) => Ok(Interpret::Closure(closure.clone())),
         }
     }
 
@@ -235,6 +277,102 @@ impl Display for Interpret {
                     .join(","),
             ),
             Interpret::Bool(b) => write!(f, "{}", b),
+            Interpret::Closure(_) => todo!(),
         }
     }
+}
+
+#[cfg(test)]
+mod tests {
+
+    use crate::calc::interpreter::Interpreter;
+    use crate::calc::parser::Parser;
+    use crate::{Cell, Sheet};
+
+    #[test]
+    fn test_range_inter() {
+        let mut sheet = Sheet::new();
+
+        sheet.insert(
+            (0, 0),
+            Cell {
+                val: crate::CellValue::Number(10.0),
+                format: crate::CellFormat {},
+            },
+        );
+
+        sheet.insert(
+            (0, 1),
+            Cell {
+                val: crate::CellValue::Number(20.0),
+                format: crate::CellFormat {},
+            },
+        );
+
+        let inter = Interpreter::new(&sheet);
+
+        let expr = Parser::parse_string("(A1:A2)".to_string()).unwrap();
+        let expr = inter.interpret(&expr).unwrap().to_string();
+
+        let expected = String::from("10,20");
+        assert_eq!(expr, expected);
+    }
+
+    #[test]
+    fn test_count() {
+        let mut sheet = Sheet::new();
+
+        sheet.insert(
+            (0, 0),
+            Cell {
+                val: crate::CellValue::Number(10.0),
+                format: crate::CellFormat {},
+            },
+        );
+
+        sheet.insert(
+            (0, 1),
+            Cell {
+                val: crate::CellValue::Number(20.0),
+                format: crate::CellFormat {},
+            },
+        );
+
+        let inter = Interpreter::new(&sheet);
+
+        let expr = Parser::parse_string("count((A1:A2))".to_string()).unwrap();
+        let expr = inter.interpret(&expr).unwrap().to_string();
+
+        let expected = String::from("30");
+        assert_eq!(expr, expected);
+    }
+
+    //[test]
+    //fn test_count_if() {
+    //let mut sheet = Sheet::new();
+
+    //sheet.insert(
+    //(0, 0),
+    //Cell {
+    //val: crate::CellValue::Number(10.0),
+    //format: crate::CellFormat {},
+    //},
+    //);
+
+    //sheet.insert(
+    //(0, 1),
+    //Cell {
+    //val: crate::CellValue::Number(20.0),
+    //format: crate::CellFormat {},
+    //},
+    //);
+
+    //let inter = Interpreter::new(&sheet);
+
+    //let expr = Parser::parse_string("count_if(A1:A2, |v| v > 10)".to_string()).unwrap();
+    //let expr = inter.interpret(&expr).unwrap().to_string();
+
+    //let expected = String::from("20");
+    //assert_eq!(expr, expected);
+    //}
 }

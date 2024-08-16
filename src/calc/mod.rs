@@ -25,6 +25,7 @@ pub enum Token {
     False,
     LeftParen,
     RightParen,
+    Bar,
 }
 
 impl Display for Token {
@@ -49,6 +50,8 @@ impl Display for Token {
                 Token::False => "FALSE",
                 Token::LeftParen => "(",
                 Token::RightParen => ")",
+                Token::EqualEqual => "==",
+                Token::Bar => "|",
                 _ => unreachable!(),
             }),
         };

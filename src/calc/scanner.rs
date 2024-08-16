@@ -41,6 +41,7 @@ impl Scanner {
             ',' => Token::Comma,
             '.' => Token::Dot,
             ':' => Token::Colon,
+            '|' => Token::Bar,
             '=' if self.consume_if('=') => Token::EqualEqual,
             '>' if self.consume_if('=') => Token::GreaterEqual,
             '<' if self.consume_if('=') => Token::LessEqual,
